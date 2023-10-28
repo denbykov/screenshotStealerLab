@@ -79,7 +79,7 @@ int main() {
 
     auto bitmap = makeScreenshot();
 
-    if (saveBmp(bitmap, "screenshot.bmp")) {
+    if (saveBmp(bitmap, "screenshot.bmp")) {       
         std::cout << "Screenshot saved successfully." << std::endl;
     }
     else {
