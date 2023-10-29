@@ -1,11 +1,15 @@
 #pragma once
 
-#include <stdint.h>
+#include <Windows.h>
+
 #include <vector>
 
 struct Packet {
-	using size_t = uint32_t;
+	using size_t = ULONG;
 
-	size_t size;
-	const char* payload;
+	size_t biWidth;
+	size_t biHeight;
+	size_t biBitCount;
+	size_t payloadSize;
+	BYTE* payload;
 };

