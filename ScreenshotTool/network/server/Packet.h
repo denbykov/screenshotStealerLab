@@ -6,9 +6,9 @@
 struct Packet {
 	using size_t = ULONG;
 
-	size_t biWidth;
-	size_t biHeight;
-	size_t biBitCount;
-	size_t payloadSize;
+	size_t biWidth{};
+	size_t biHeight{};
+	size_t biBitCount{};
+	size_t payloadSize{};
 	std::vector<BYTE> payload;
 };

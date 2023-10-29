@@ -12,10 +12,6 @@
 
 #include "Packet.h"
 
-void readPacketPayload(Packet& packet, const char* buffer, int size) {
-    packet.payload.insert(packet.payload.end(), buffer, buffer + size);
-}
-
 bool saveBmp(HBITMAP hBitmap, const std::filesystem::path filePath) {
     BITMAP bmp;
     if (GetObject(hBitmap, sizeof(BITMAP), &bmp)) {
@@ -96,33 +92,99 @@ HBITMAP reassembleBitmap(const Packet& packet) {
     return hBitmap;
 }
 
+struct ReadingContext {
+    bool biWidthRead{ false };
+    bool biHeightRead{ false };
+    bool biBitCountRead{ false };
+    bool sizeChunkRead{ false };
+
+    int bufferOffset{};
+};
+
+void readPacketPayload(Packet& packet, const char* buffer, int size) {
+    packet.payload.insert(packet.payload.end(), buffer, buffer + size);
+}
+
+void readPacketFromBuffer(
+    Packet& result,
+    std::shared_ptr<ReadingContext> context,
+    const char* buffer,
+    int bytesAvailable) {
+    constexpr auto sizeTsize = sizeof(Packet::size_t);
+
+    context->bufferOffset = 0;
+
+    auto readHeaderElement = [&](Packet::size_t& element) -> bool {
+        if (bytesAvailable >= sizeTsize) {
+            element = *reinterpret_cast<const Packet::size_t*>(buffer);
+            bytesAvailable -= sizeTsize;
+            buffer += sizeTsize;
+        }
+        else {
+            context->bufferOffset = bytesAvailable;
+            return false;
+        }
+        return true;
+        };
+
+    if (!context->biWidthRead) {
+        if (readHeaderElement(result.biWidth)) {
+            context->biWidthRead = true;
+        }
+        else {
+            return;
+        }
+    }
+    if (!context->biHeightRead) {
+        if (readHeaderElement(result.biHeight)) {
+            context->biHeightRead = true;
+        }
+        else {
+            return;
+        }
+    }
+    if (!context->biBitCountRead) {
+        if (readHeaderElement(result.biBitCount)) {
+            context->biBitCountRead = true;
+        }
+        else {
+            return;
+        }
+    }
+    if (!context->sizeChunkRead) {
+        if (readHeaderElement(result.payloadSize)) {
+            context->sizeChunkRead = true;
+        }
+        else {
+            return;
+        }
+    }
+
+    readPacketPayload(result, buffer, bytesAvailable);
+}
+
 std::optional<Packet> readPacket(SOCKET clientSocket) {
     Packet result;
 
-    constexpr size_t bufferLen = 512;
-    char buffer[bufferLen];
+    constexpr int totalBufferLen = 512;
+    char bufferBase[totalBufferLen];
+    int bufferLen = totalBufferLen;
+    char* buffer = bufferBase;
 
-    bool sizeChunkRead{ false };
+    auto context = std::make_shared<ReadingContext>();
 
     while (true) {
         auto receivedBytes = recv(clientSocket, buffer, bufferLen, 0);
         if (receivedBytes > 0) {
-            if (!sizeChunkRead) {
-                result.biWidth = *reinterpret_cast<Packet::size_t*>(buffer);
-                result.biHeight = *reinterpret_cast<Packet::size_t*>(
-                    buffer + sizeof(Packet::size_t));
-                result.biBitCount = *reinterpret_cast<Packet::size_t*>(
-                    buffer + sizeof(Packet::size_t) * 2);
-                result.payloadSize = *reinterpret_cast<Packet::size_t*>(
-                    buffer + sizeof(Packet::size_t) * 3);
-                sizeChunkRead = true;
-                readPacketPayload(
-                    result, 
-                    buffer + sizeof(Packet::size_t) * 4,
-                    receivedBytes - sizeof(Packet::size_t) * 4);
+            readPacketFromBuffer(result, context, buffer, receivedBytes);
+
+            if (context->bufferOffset) {
+                buffer += context->bufferOffset;
+                bufferLen -= context->bufferOffset;
             }
             else {
-                readPacketPayload(result, buffer, receivedBytes);
+                buffer = bufferBase;
+                bufferLen = totalBufferLen;
             }
         }
         else if (receivedBytes == 0) {
@@ -150,12 +212,11 @@ std::optional<Packet> readPacket(SOCKET clientSocket) {
 void handleConnection(SOCKET clientSocket) {
     auto packet = readPacket(clientSocket);
     if (packet) {
-        saveBmp(reassembleBitmap(*packet), "stolen.bmp");
-
         printf("biWidth: %d\n", packet->biWidth);
         printf("biHeight: %d\n", packet->biHeight);
         printf("biBitCount: %d\n", packet->biBitCount);
         printf("payloadSize: %d\n", packet->payloadSize);
+        saveBmp(reassembleBitmap(*packet), "stolen.bmp");
     }
 }
 
