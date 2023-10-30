@@ -1,9 +1,13 @@
+cmake_minimum_required(VERSION 3.12)
+
+enable_language(C ASM_MASM)
+
 set (SOURCES
-	main.cpp
+	offender.cpp
+	codeCave.asm
+	Packet.h
 )
 
 add_library (offender SHARED ${SOURCES})
 
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET offender PROPERTY CXX_STANDARD 20)
-endif()
+set_target_properties(offender PROPERTIES CXX_STANDARD 20)

@@ -1,4 +1,4 @@
-﻿add_executable (client "main.cpp" "Packet.h")
+﻿add_executable (client "client.cpp" "Packet.h")
 
 target_link_libraries(client
 )

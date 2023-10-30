@@ -1,4 +1,4 @@
-﻿add_executable (server "main.cpp" "Packet.h")
+﻿add_executable (server "server.cpp" "Packet.h")
 
 target_link_libraries(server
 )

@@ -11,5 +11,5 @@ struct Packet {
 	size_t biHeight{};
 	size_t biBitCount{};
 	size_t payloadSize{};
-	BYTE* payload{ nullptr };
+	BYTE* payload;
 };
