@@ -177,7 +177,7 @@ extern "C" void codeCave();
 //DWORD hook_address = 0x00007FF798FC5CB0; // address when starting in the x64dgb
 
 constexpr uint64_t hookOffset = 0x1C08A;
-constexpr uint64_t codeCaveOffset = 0x686270;
+constexpr uint64_t codeCaveOffset = 0x16270;
 
 BYTE nop = 0x90;
 //Mov rax 48 B8
